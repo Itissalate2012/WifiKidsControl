@@ -1,0 +1,299 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+env:
+  # Android
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g -Dorg.gradle.parallel=true"
+  # iOS
+  XCODE_VERSION: "15.4"
+  IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+
+jobs:
+  # ==========================================
+  # ANDROID BUILD
+  # ==========================================
+  android-build:
+    name: Android APK (${{ matrix.build_type }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        build_type: [debug, release]
+        include:
+          - build_type: debug
+            gradle_task: assembleDebug
+            artifact_name: app-debug
+          - build_type: release
+            gradle_task: assembleRelease
+            artifact_name: app-release
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: ☕ Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: gradle
+
+      - name: 🤖 Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          ndk-version: r27b
+          build-tools-version: 34.0.0
+          cmdline-tools-version: latest
+
+      - name: 📦 Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: 🔐 Decode Keystore (release only)
+        if: matrix.build_type == 'release' && env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+          echo "KEYSTORE_PATH=keystore.jks" >> $GITHUB_ENV
+
+      - name: 🔧 Configure signing (release)
+        if: matrix.build_type == 'release'
+        run: |
+          cat > local.properties << EOF
+          sdk.dir=${ANDROID_HOME}
+          EOF
+
+          cat > app/keystore.properties << EOF
+          storeFile=../keystore.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+
+      - name: 🏗 Build APK
+        working-directory: ./WifiKidsControl
+        run: |
+          chmod +x gradlew
+          ./gradlew ${{ matrix.gradle_task }} --no-daemon --stacktrace
+
+      - name: 📤 Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.artifact_name }}-${{ github.sha }}
+          path: |
+            WifiKidsControl/app/build/outputs/apk/${{ matrix.build_type }}/*.apk
+          retention-days: 30
+          compression-level: 6
+
+      - name: 📋 Print APK info
+        run: |
+          APK_PATH=$(find WifiKidsControl/app/build/outputs/apk/${{ matrix.build_type }} -name "*.apk" | head -1)
+          if [ -f "$APK_PATH" ]; then
+            echo "APK: $APK_PATH"
+            echo "Size: $(du -h $APK_PATH | cut -f1)"
+            echo "SHA256: $(sha256sum $APK_PATH | cut -d' ' -f1)"
+          fi
+
+  # ==========================================
+  # iOS BUILD (macOS runner)
+  # ==========================================
+  ios-build:
+    name: iOS IPA (${{ matrix.configuration }})
+    runs-on: macos-14  # Xcode 15.4 included
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+        include:
+          - configuration: Debug
+            export_method: development
+            artifact_name: Debug
+          - configuration: Release
+            export_method: ad-hoc
+            artifact_name: Release
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: 🔧 Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: 🔐 Import certificates (Release only)
+        if: matrix.configuration == 'Release' && env.CERTIFICATE_BASE64 != ''
+        run: |
+          # Create temp keychain
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+
+          # Import certificate
+          echo "${{ secrets.CERTIFICATE_BASE64 }}" | base64 -d > cert.p12
+          security import cert.p12 -k build.keychain -P "${{ secrets.CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+
+          # Import provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "${{ secrets.PROVISIONING_PROFILE_BASE64 }}" | base64 -d > profile.mobileprovision
+          cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+
+          # Cleanup
+          rm cert.p12 profile.mobileprovision
+
+      - name: 📦 Install CocoaPods (if needed)
+        run: |
+          if [ -f "WifiKidsControl-iOS/Podfile" ]; then
+            cd WifiKidsControl-iOS
+            pod install --repo-update
+          fi
+
+      - name: 🏗 Build & Archive
+        working-directory: ./WifiKidsControl-iOS
+        run: |
+          # Check if Xcode project exists
+          if [ ! -d "WifiKidsControl.xcodeproj" ]; then
+            echo "❌ Xcode project not found. Creating minimal project structure..."
+            echo "Please create Xcode project first (see README)"
+            exit 1
+          fi
+
+          xcodebuild clean build \
+            -project WifiKidsControl.xcodeproj \
+            -scheme WifiKidsControl \
+            -configuration ${{ matrix.configuration }} \
+            -destination "generic/platform=iOS" \
+            -archivePath build/WifiKidsControl.xcarchive \
+            -quiet \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ secrets.PROVISIONING_PROFILE_NAME }}" \
+            | xcpretty || exit ${PIPESTATUS[0]}
+
+      - name: 📦 Export IPA
+        if: matrix.configuration == 'Release'
+        working-directory: ./WifiKidsControl-iOS
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath build/WifiKidsControl.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist \
+            -quiet | xcpretty || exit ${PIPESTATUS[0]}
+
+      - name: 📤 Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-${{ matrix.artifact_name }}-${{ github.sha }}
+          path: |
+            WifiKidsControl-iOS/build/export/*.ipa
+          retention-days: 30
+          compression-level: 6
+
+      - name: 📋 Print IPA info
+        if: matrix.configuration == 'Release'
+        run: |
+          IPA_PATH=$(find WifiKidsControl-iOS/build/export -name "*.ipa" | head -1)
+          if [ -f "$IPA_PATH" ]; then
+            echo "IPA: $IPA_PATH"
+            echo "Size: $(du -h $IPA_PATH | cut -f1)"
+            echo "SHA256: $(shasum -a 256 $IPA_PATH | cut -d' ' -f1)"
+          fi
+
+  # ==========================================
+  # RELEASE (on tag push)
+  # ==========================================
+  create-release:
+    name: Create GitHub Release
+    needs: [android-build, ios-build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-*-${{ github.sha }}
+          path: artifacts/android
+          merge-multiple: true
+
+      - name: 📥 Download iOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ios-Release-${{ github.sha }}
+          path: artifacts/ios
+          merge-multiple: true
+
+      - name: 📦 Prepare release files
+        run: |
+          mkdir -p release-files
+          cp artifacts/android/*.apk release-files/ 2>/dev/null || true
+          cp artifacts/ios/*.ipa release-files/ 2>/dev/null || true
+          ls -la release-files/
+
+      - name: 📝 Generate changelog
+        id: changelog
+        run: |
+          git log --pretty=format:"- %s (%an)" $(git describe --tags --abbrev=0 HEAD^)..HEAD > CHANGELOG.md || echo "- Initial release" > CHANGELOG.md
+          cat CHANGELOG.md
+
+      - name: 🚀 Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          files: release-files/*
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================
+  # NOTIFICATIONS (optional)
+  # ==========================================
+  notify:
+    name: Notify
+    needs: [android-build, ios-build, create-release]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📊 Build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Android Debug | ${{ needs.android-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Android Release | ${{ needs.android-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| iOS Debug | ${{ needs.ios-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| iOS Release | ${{ needs.ios-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.create-release.result }}" != "" ]; then
+            echo "| GitHub Release | ${{ needs.create-release.result }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View Artifacts](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY

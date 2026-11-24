@@ -1,0 +1,98 @@
+<resources>
+    <string name="app_name">WifiKidsControl</string>
+    <string name="app_name_short">WifiKids</string>
+
+    <!-- Router Setup -->
+    <string name="router_setup_title">Configuration du Routeur</string>
+    <string name="router_type">Type de routeur</string>
+    <string name="router_url">URL du routeur</string>
+    <string name="router_username">Nom d\'utilisateur</string>
+    <string name="router_password">Mot de passe</string>
+    <string name="router_api_key">Clé API</string>
+    <string name="test_connection">Tester la connexion</string>
+    <string name="save_and_connect">Enregistrer et connecter</string>
+    <string name="cancel">Annuler</string>
+
+    <!-- Main Screen -->
+    <string name="search_hint">Rechercher appareil…</string>
+    <string name="no_devices">Aucun appareil trouvé</string>
+    <string name="tab_all">Tous</string>
+    <string name="tab_online">En ligne</string>
+    <string name="tab_blocked">Bloqués</string>
+    <string name="tab_children">Enfants</string>
+    <string name="tab_guests">Invités</string>
+
+    <!-- Device Card -->
+    <string name="blocked_label">BLOQUÉ</string>
+    <string name="profile_label">Profil: %s</string>
+    <string name="unknown_device">Appareil %s</string>
+
+    <!-- Profiles -->
+    <string name="profile_default">Standard</string>
+    <string name="profile_child">Enfant</string>
+    <string name="profile_guest">Invité</string>
+    <string name="profile_adult">Adulte</string>
+    <string name="choose_profile">Choisir le profil</string>
+    <string name="profile_description_default">Accès normal sans restrictions</string>
+    <string name="profile_description_child">Contrôle parental strict</string>
+    <string name="profile_description_guest">Accès limité temporaire</string>
+    <string name="profile_description_adult">Accès complet sans restriction</string>
+
+    <!-- Device Detail -->
+    <string name="device_info">Informations</string>
+    <string name="device_name">Nom</string>
+    <string name="device_mac">Adresse MAC</string>
+    <string name="device_vendor">Fabricant</string>
+    <string name="device_ip">Adresse IP</string>
+    <string name="device_type">Type</string>
+    <string name="device_first_seen">Premier vu</string>
+    <string name="device_last_seen">Dernier vu</string>
+    <string name="access_control">Contrôle d\'accès</string>
+    <string name="block_access">Bloquer l\'accès</string>
+    <string name="change_profile">Changer le profil</string>
+    <string name="recent_history">Historique récent</string>
+    <string name="delete_device">Supprimer l\'appareil</string>
+
+    <!-- Schedule -->
+    <string name="schedule_editor">Éditeur de planning</string>
+    <string name="add_rule">Ajouter une règle</string>
+    <string name="rule_name">Nom de la règle</string>
+    <string name="start_time">Heure de début</string>
+    <string name="end_time">Heure de fin</string>
+    <string name="days">Jours</string>
+    <string name="action">Action</string>
+    <string name="action_block">Bloquer</string>
+    <string name="action_allow">Autoriser</string>
+    <string name="action_throttle">Limiter</string>
+    <string name="monday_short">Lun</string>
+    <string name="tuesday_short">Mar</string>
+    <string name="wednesday_short">Mer</string>
+    <string name="thursday_short">Jeu</string>
+    <string name="friday_short">Ven</string>
+    <string name="saturday_short">Sam</string>
+    <string name="sunday_short">Dim</string>
+
+    <!-- Events -->
+    <string name="event_connected">Connecté</string>
+    <string name="event_disconnected">Déconnecté</string>
+    <string name="event_blocked">Bloqué</string>
+    <string name="event_unblocked">Débloqué</string>
+    <string name="event_profile_changed">Profil changé</string>
+    <string name="event_schedule_triggered">Planning déclenché</string>
+
+    <!-- Errors & Status -->
+    <string name="router_connected">Routeur connecté</string>
+    <string name="router_disconnected">Routeur déconnecté</string>
+    <string name="router_connecting">Connexion au routeur…</string>
+    <string name="router_error">Erreur: %s</string>
+    <string name="vpn_local">VPN Local</string>
+    <string name="permission_vpn_required">Permission VPN requise</string>
+    <string name="permission_vpn_explanation">L\'application a besoin de la permission VPN pour bloquer l\'accès localement quand le routeur n\'est pas accessible.</string>
+
+    <!-- Stats -->
+    <string name="stat_total">Total</string>
+    <string name="stat_online">En ligne</string>
+    <string name="stat_blocked">Bloqués</string>
+    <string name="stat_children">Enfants</string>
+    <string name="stat_guests">Invités</string>
+</resources>
